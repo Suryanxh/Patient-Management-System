@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patient Management System</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #f4f6fb;
+    color: #1f2937;
+  }
+  header {
+    background: #1e40af;
+    color: white;
+    padding: 16px 24px;
+  }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; opacity: 0.85; font-size: 14px; }
+  main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+  .card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  h2 { margin-top: 0; font-size: 18px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  input, select {
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  button {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 6px;
+    background: #2563eb;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #1d4ed8; }
+  button.secondary { background: #64748b; }
+  button.secondary:hover { background: #475569; }
+  button.danger { background: #dc2626; }
+  button.danger:hover { background: #b91c1c; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f8fafc; font-weight: 600; }
+  .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .underweight { background: #fef9c3; color: #854d0e; }
+  .normal { background: #dcfce7; color: #166534; }
+  .overweight, .obese { background: #fee2e2; color: #991b1b; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .grid label { display: flex; flex-direction: column; font-size: 13px; gap: 4px; color: #475569; }
+  .grid input, .grid select { width: 100%; }
+  .actions { margin-top: 14px; display: flex; gap: 10px; }
+  .msg {
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    display: none;
+  }
+  .msg.ok { display: block; background: #dcfce7; color: #166534; }
+  .msg.err { display: block; background: #fee2e2; color: #991b1b; }
+  .hidden { display: none; }
+  .row-actions button { padding: 4px 10px; font-size: 13px; margin-right: 4px; }
+  .empty { color: #64748b; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Patient Management System</h1>
+  <p id="apiStatus">Connecting to API...</p>
+</header>
+
+<main>
+
+  <!-- Patient list -->
+  <div class="card">
+    <h2>All Patients</h2>
+    <div class="toolbar">
+      <select id="sortBy">
+        <option value="">Sort by...</option>
+        <option value="height">Height</option>
+        <option value="weight">Weight</option>
+        <option value="bmi">BMI</option>
+      </select>
+      <select id="sortOrder">
+        <option value="asc">Ascending</option>
+        <option value="desc">Descending</option>
+      </select>
+      <button onclick="applySort()">Apply</button>
+      <button class="secondary" onclick="loadPatients()">Refresh</button>
+      <button onclick="showCreate()">+ Add Patient</button>
+    </div>
+    <div class="toolbar">
+      <input id="searchId" placeholder="Patient ID, e.g. P001">
+      <button onclick="searchPatient()">Find</button>
+    </div>
+    <div id="listMsg" class="msg"></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Name</th><th>Age</th><th>Gender</th><th>City</th>
+            <th>Height (m)</th><th>Weight (kg)</th><th>BMI</th><th>Verdict</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="patientRows"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Create / Edit form -->
+  <div class="card hidden" id="formCard">
+    <h2 id="formTitle">Add Patient</h2>
+    <div class="grid">
+      <label>ID <input id="f_id" placeholder="P011"></label>
+      <label>Name <input id="f_name"></label>
+      <label>City <input id="f_city"></label>
+      <label>Age <input id="f_age" type="number" min="1" max="119"></label>
+      <label>Gender
+        <select id="f_gender">
+          <option>Male</option><option>Female</option><option>Others</option>
+        </select>
+      </label>
+      <label>Height (m) <input id="f_height" type="number" step="0.01" min="0.01"></label>
+      <label>Weight (kg) <input id="f_weight" type="number" step="0.1" min="0.01"></label>
+    </div>
+    <div class="actions">
+      <button id="saveBtn" onclick="savePatient()">Save</button>
+      <button class="secondary" onclick="hideForm()">Cancel</button>
+    </div>
+    <div id="formMsg" class="msg"></div>
+  </div>
+
+</main>
+
+<script>
+const API = "http://localhost:8000";
+let editingId = null;
+
+// ---------- helpers ----------
+function showMsg(elId, text, ok = true) {
+  const el = document.getElementById(elId);
+  el.textContent = text;
+  el.className = "msg " + (ok ? "ok" : "err");
+  setTimeout(() => { el.className = "msg"; }, 4000);
+}
+
+function errorText(data) {
+  // FastAPI returns {detail: string} or {detail: [...]} for validation errors
+  if (!data || !data.detail) return "Something went wrong";
+  if (typeof data.detail === "string") return data.detail;
+  return data.detail.map(d => `${d.loc.slice(1).join(".")}: ${d.msg}`).join("; ");
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    headers: { "Content-Type": "application/json" },
+    ...options
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = errorText(data);
+    throw new Error(message === "Something went wrong"
+      ? `API request failed (${res.status})`
+      : message);
+  }
+  return data;
+}
+
+// ---------- status ----------
+async function checkApi() {
+  try {
+    const d = await api("/");
+    document.getElementById("apiStatus").textContent = "Connected: " + d.message;
+  } catch (e) {
+    document.getElementById("apiStatus").textContent =
+      "Cannot reach API at " + API + ". Is uvicorn running?";
+  }
+}
+
+// ---------- list ----------
+function rowHtml(id, p) {
+  const row = document.createElement("tr");
+  [id, p.name, p.age, p.gender, p.city, p.height, p.weight, p.bmi].forEach(value => {
+    const cell = document.createElement("td");
+    cell.textContent = value ?? "";
+    row.appendChild(cell);
+  });
+
+  const verdictCell = document.createElement("td");
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  const verdictClass = String(p.verdict || "").toLowerCase();
+  if (["underweight", "normal", "overweight", "obese"].includes(verdictClass)) {
+    badge.classList.add(verdictClass);
+  }
+  badge.textContent = p.verdict ?? "";
+  verdictCell.appendChild(badge);
+  row.appendChild(verdictCell);
+
+  const actionsCell = document.createElement("td");
+  actionsCell.className = "row-actions";
+  const editButton = document.createElement("button");
+  editButton.className = "secondary";
+  editButton.textContent = "Edit";
+  editButton.addEventListener("click", () => showEdit(id));
+  const deleteButton = document.createElement("button");
+  deleteButton.className = "danger";
+  deleteButton.textContent = "Delete";
+  deleteButton.addEventListener("click", () => deletePatient(id));
+  actionsCell.append(editButton, deleteButton);
+  row.appendChild(actionsCell);
+  return row;
+}
+
+function renderRows(entries) {
+  const tbody = document.getElementById("patientRows");
+  tbody.replaceChildren();
+  if (!entries.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 10;
+    cell.className = "empty";
+    cell.textContent = "No patients found";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    return;
+  }
+  entries.forEach(([id, patient]) => tbody.appendChild(rowHtml(id, patient)));
+}
+
+async function loadPatients() {
+  try {
+    const data = await api("/view");
+    renderRows(Object.entries(data));
+  } catch (e) {
+    showMsg("listMsg", e.message, false);
+  }
+}
+
+async function applySort() {
+  const sortBy = document.getElementById("sortBy").value;
+  const order = document.getElementById("sortOrder").value;
+  if (!sortBy) return loadPatients();
+  try {
+    const data = await api("/view");
+    const entries = Object.entries(data).sort(([, a], [, b]) => {
+      const difference = Number(a[sortBy]) - Number(b[sortBy]);
+      return order === "desc" ? -difference : difference;
+    });
+    renderRows(entries);
+  } catch (e) {
+    showMsg("listMsg", e.message, false);
+  }
+}
+
+async function searchPatient() {
+  const id = document.getElementById("searchId").value.trim();
+  if (!id) return loadPatients();
+  try {
+    const p = await api(`/patient/${encodeURIComponent(id)}`);
+    renderRows([[id, p]]);
+  } catch (e) {
+    showMsg("listMsg", e.message, false);
+  }
+}
+
+// ---------- form ----------
+function showCreate() {
+  editingId = null;
+  document.getElementById("formTitle").textContent = "Add Patient";
+  document.getElementById("saveBtn").textContent = "Create";
+  document.getElementById("f_id").disabled = false;
+  clearForm();
+  document.getElementById("formCard").classList.remove("hidden");
+  document.getElementById("f_id").focus();
+}
+
+async function showEdit(id) {
+  try {
+    const p = await api(`/patient/${encodeURIComponent(id)}`);
+    editingId = id;
+    document.getElementById("formTitle").textContent = "Edit Patient " + id;
+    document.getElementById("saveBtn").textContent = "Update";
+    document.getElementById("f_id").value = id;
+    document.getElementById("f_id").disabled = true;
+    document.getElementById("f_name").value = p.name;
+    document.getElementById("f_city").value = p.city;
+    document.getElementById("f_age").value = p.age;
+    const gender = String(p.gender || "").toLowerCase();
+    document.getElementById("f_gender").value =
+      ({ male: "Male", female: "Female", others: "Others" })[gender] || "";
+    document.getElementById("f_height").value = p.height;
+    document.getElementById("f_weight").value = p.weight;
+    document.getElementById("formCard").classList.remove("hidden");
+    document.getElementById("formCard").scrollIntoView({ behavior: "smooth" });
+  } catch (e) {
+    showMsg("listMsg", e.message, false);
+  }
+}
+
+function hideForm() {
+  document.getElementById("formCard").classList.add("hidden");
+  document.getElementById("formMsg").className = "msg";
+}
+
+function clearForm() {
+  ["f_id", "f_name", "f_city", "f_age", "f_height", "f_weight"].forEach(
+    id => document.getElementById(id).value = ""
+  );
+  document.getElementById("f_gender").value = "Male";
+  document.getElementById("formMsg").className = "msg";
+}
+
+async function savePatient() {
+  const numOrNull = v => (v === "" ? null : Number(v));
+  const body = {
+    name: document.getElementById("f_name").value.trim(),
+    city: document.getElementById("f_city").value.trim(),
+    age: numOrNull(document.getElementById("f_age").value),
+    gender: document.getElementById("f_gender").value,
+    height: numOrNull(document.getElementById("f_height").value),
+    weight: numOrNull(document.getElementById("f_weight").value),
+  };
+
+  try {
+    if (editingId) {
+      // PUT /edit/{id} accepts partial updates; send only filled fields
+      const partial = Object.fromEntries(
+        Object.entries(body).filter(([, v]) => v !== null && v !== "")
+      );
+      await api(`/edit/${encodeURIComponent(editingId)}`, {
+        method: "PUT",
+        body: JSON.stringify(partial),
+      });
+      showMsg("formMsg", "Patient updated");
+    } else {
+      const id = document.getElementById("f_id").value.trim();
+      if (!id) throw new Error("ID is required");
+      await api("/create", {
+        method: "POST",
+        body: JSON.stringify({ id, ...body }),
+      });
+      showMsg("formMsg", "Patient created");
+    }
+    hideForm();
+    loadPatients();
+  } catch (e) {
+    showMsg("formMsg", e.message, false);
+  }
+}
+
+// ---------- delete ----------
+async function deletePatient(id) {
+  if (!confirm(`Delete patient ${id}?`)) return;
+  try {
+    await api(`/delete/${encodeURIComponent(id)}`, { method: "DELETE" });
+    showMsg("listMsg", "Patient deleted");
+    loadPatients();
+  } catch (e) {
+    showMsg("listMsg", e.message, false);
+  }
+}
+
+// ---------- init ----------
+checkApi();
+loadPatients();
+</script>
+</body>
+</html>
